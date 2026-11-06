@@ -1,59 +1,175 @@
-
 <!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>❤️音楽</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>❤️音楽 — Music Player</title>
+
 <style>
-*{box-sizing:border-box}
-body{
- margin:0;background:#101522;color:white;
- font-family:Arial,sans-serif;
- padding:22px;
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: Arial, sans-serif;
+    color: white;
+    background:
+      radial-gradient(circle at top, #49346d, transparent 55%),
+      linear-gradient(145deg, #100d20, #211b3b);
+    padding: 25px 16px;
 }
-.app{max-width:480px;margin:auto}
-.cover{
- height:210px;border-radius:22px;
- background:linear-gradient(135deg,#273b62,#795c91,#171d35);
- display:flex;align-items:center;justify-content:center;
- font-size:65px;
+
+.player {
+    max-width: 430px;
+    margin: 30px auto;
+    padding: 25px;
+    border: 1px solid #a58bd0;
+    border-radius: 25px;
+    background: rgba(25, 20, 47, .88);
+    box-shadow: 0 0 35px #8e64bd44;
 }
-h1{text-align:center;font-size:34px;margin:20px 0 5px}
-.sub{text-align:center;color:#aebbd9;font-size:12px;letter-spacing:3px}
-h2{font-size:17px;margin-top:30px}
-.song{
- background:#202a40;border-radius:15px;
- padding:15px;margin:10px 0;
- display:flex;align-items:center;gap:13px;
+
+h1 {
+    text-align: center;
+    font-size: 32px;
+    margin: 5px 0;
 }
-.play{
- border:0;border-radius:50%;width:42px;height:42px;
- background:#9a83cf;color:white;font-size:17px;
+
+.subtitle {
+    text-align: center;
+    color: #c4afdF;
+    margin-bottom: 25px;
 }
-.info{flex:1}
-.info strong{display:block;font-size:14px}
-.info small{color:#aebbd9}
-.footer{text-align:center;color:#9da9c4;margin-top:30px}
+
+.cover {
+    height: 210px;
+    border-radius: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 85px;
+    background: linear-gradient(135deg, #45346f, #a36b9e);
+    margin-bottom: 22px;
+}
+
+#nowTitle {
+    text-align: center;
+    font-size: 19px;
+    margin: 12px 0 20px;
+    overflow-wrap: anywhere;
+}
+
+audio {
+    width: 100%;
+    margin-bottom: 20px;
+}
+
+h2 {
+    font-size: 19px;
+    color: #e4d3ff;
+}
+
+.song {
+    padding: 14px;
+    margin: 9px 0;
+    border-radius: 13px;
+    background: #ffffff12;
+    cursor: pointer;
+    border: 1px solid #ffffff15;
+}
+
+.song:active {
+    background: #8061a7;
+}
+
+#status {
+    color: #c4afdF;
+    text-align: center;
+    font-size: 13px;
+    margin-top: 15px;
+}
+
+button {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #b99de4;
+    border-radius: 14px;
+    background: #75569b;
+    color: white;
+    font-size: 15px;
+}
 </style>
 </head>
+
 <body>
-<div class="app">
- <div class="cover">🎧🌙</div>
- <h1>❤️音楽</h1>
- <div class="sub">YOUR ANIME MUSIC WORLD</div>
- <h2>♫ MY PLAYLIST</h2>
- <div id="songs">
-  <div class="song">
-   <button class="play">▶</button>
-   <div class="info">
-    <strong>Welcome to my playlist</strong>
-    <small>❤️ 音楽 collection</small>
-   </div>
-   <span>♡</span>
-  </div>
- </div>
- <div class="footer">あなたの音楽の世界 ♡</div>
+<div class="player">
+    <h1>❤️音楽</h1>
+    <div class="subtitle">your little music universe ✦</div>
+
+    <div class="cover">🌙🎧</div>
+
+    <div id="nowTitle">Выбери свою песню</div>
+
+    <audio id="audio" controls preload="none"></audio>
+
+    <h2>♫ Моя библиотека</h2>
+
+    <div id="playlist">Загружаем музыку...</div>
+
+    <button onclick="loadSongs()">↻ Обновить список</button>
+
+    <div id="status"></div>
 </div>
+
+<script>
+const API = "https://music-player-v3et.onrender.com";
+const playlist = document.getElementById("playlist");
+const audio = document.getElementById("audio");
+const nowTitle = document.getElementById("nowTitle");
+const statusText = document.getElementById("status");
+
+async function loadSongs() {
+    playlist.textContent = "Загружаем музыку...";
+    statusText.textContent = "";
+
+    try {
+        const response = await fetch(API + "/songs");
+
+        if (!response.ok) throw new Error("Ошибка сервера");
+
+        const songs = await response.json();
+        playlist.innerHTML = "";
+
+        if (songs.length === 0) {
+            playlist.textContent = "Пока здесь нет песен 🌙";
+            return;
+        }
+
+        songs.forEach(song => {
+            const item = document.createElement("div");
+            item.className = "song";
+            item.textContent = "♫  " + song.title;
+
+            item.onclick = () => {
+                nowTitle.textContent = song.title;
+                audio.src = API + song.url;
+                audio.play().catch(() => {
+                    statusText.textContent = "Нажми Play для воспроизведения";
+                });
+            };
+
+            playlist.appendChild(item);
+        });
+
+        statusText.textContent = "Песен в библиотеке: " + songs.length;
+
+    } catch (error) {
+        playlist.textContent = "Не удалось загрузить музыку";
+        statusText.textContent = "Попробуй обновить список позже";
+    }
+}
+
+loadSongs();
+</script>
 </body>
 </html>
