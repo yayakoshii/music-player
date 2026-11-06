@@ -1,24 +1,18 @@
 import os
-import sqlite3
 import requests
 from flask import Flask, request, jsonify, Response
 
 app = Flask(__name__)
 
 TOKEN = os.environ.get("BOT_TOKEN")
-DB = "/tmp/music.db"
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
-def init_db():
-    with sqlite3.connect(DB) as con:
-        con.execute("""
-            CREATE TABLE IF NOT EXISTS songs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT,
-                file_id TEXT
-            )
-        """)
+HEADERS = {
+    "apikey": SUPABASE_KEY or "",
+    "Content-Type": "application/json"
+}
 
-init_db()
 
 @app.after_request
 def cors(response):
@@ -27,9 +21,11 @@ def cors(response):
     )
     return response
 
+
 @app.route("/")
 def home():
     return "Music bot is running!"
+
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -39,42 +35,78 @@ def webhook():
 
     if audio and audio.get("file_id"):
         title = audio.get("title") or "Без названия"
-        with sqlite3.connect(DB) as con:
-            con.execute(
-                "INSERT INTO songs (title, file_id) VALUES (?, ?)",
-                (title, audio["file_id"])
-            )
+
+        result = requests.post(
+            f"{SUPABASE_URL}/rest/v1/songs",
+            headers={
+                **HEADERS,
+                "Prefer": "return=minimal"
+            },
+            json={
+                "title": title,
+                "file_id": audio["file_id"]
+            },
+            timeout=20
+        )
+
+        if not result.ok:
+            return jsonify({"error": "Database error"}), 500
 
     return jsonify({"ok": True})
 
+
 @app.route("/songs")
 def songs():
-    with sqlite3.connect(DB) as con:
-        rows = con.execute(
-            "SELECT id, title FROM songs ORDER BY id DESC"
-        ).fetchall()
+    result = requests.get(
+        f"{SUPABASE_URL}/rest/v1/songs",
+        headers=HEADERS,
+        params={
+            "select": "id,title",
+            "order": "id.desc"
+        },
+        timeout=20
+    )
+
+    if not result.ok:
+        return jsonify({"error": "Database error"}), 500
+
     return jsonify([
-        {"id": r[0], "title": r[1], "url": f"/stream/{r[0]}"}
-        for r in rows
+        {
+            "id": song["id"],
+            "title": song["title"],
+            "url": f"/stream/{song['id']}"
+        }
+        for song in result.json()
     ])
+
 
 @app.route("/stream/<int:song_id>")
 def stream(song_id):
     if not TOKEN:
         return "Bot token not configured", 500
 
-    with sqlite3.connect(DB) as con:
-        row = con.execute(
-            "SELECT file_id FROM songs WHERE id = ?",
-            (song_id,)
-        ).fetchone()
+    result = requests.get(
+        f"{SUPABASE_URL}/rest/v1/songs",
+        headers=HEADERS,
+        params={
+            "select": "file_id",
+            "id": f"eq.{song_id}"
+        },
+        timeout=20
+    )
 
-    if not row:
+    if not result.ok:
+        return "Database error", 500
+
+    items = result.json()
+
+    if not items:
         return "Song not found", 404
 
     info = requests.get(
         f"https://api.telegram.org/bot{TOKEN}/getFile",
-        params={"file_id": row[0]}
+        params={"file_id": items[0]["file_id"]},
+        timeout=20
     ).json()
 
     if not info.get("ok"):
@@ -84,7 +116,7 @@ def stream(song_id):
 
     audio = requests.get(
         f"https://api.telegram.org/file/bot{TOKEN}/{path}",
-        stream=True
+        timeout=60
     )
 
     if audio.status_code != 200:
