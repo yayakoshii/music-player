@@ -1,14 +1,14 @@
 import os
 import sqlite3
-from flask import Flask, request, jsonify
+import requests
+from flask import Flask, request, jsonify, Response
 
 app = Flask(__name__)
 
 TOKEN = os.environ.get("BOT_TOKEN")
-DB = "/var/data/music.db"
+DB = "/tmp/music.db"
 
 def init_db():
-    os.makedirs("/var/data", exist_ok=True)
     with sqlite3.connect(DB) as con:
         con.execute("""
             CREATE TABLE IF NOT EXISTS songs (
@@ -18,6 +18,15 @@ def init_db():
             )
         """)
 
+init_db()
+
+@app.after_request
+def cors(response):
+    response.headers["Access-Control-Allow-Origin"] = (
+        "https://yayakoshii.github.io"
+    )
+    return response
+
 @app.route("/")
 def home():
     return "Music bot is running!"
@@ -26,10 +35,10 @@ def home():
 def webhook():
     data = request.json or {}
     message = data.get("message", {})
-    audio = message.get("audio") or message.get("document")
+    audio = message.get("audio")
 
     if audio and audio.get("file_id"):
-        title = audio.get("title") or audio.get("file_name") or "Без названия"
+        title = audio.get("title") or "Без названия"
         with sqlite3.connect(DB) as con:
             con.execute(
                 "INSERT INTO songs (title, file_id) VALUES (?, ?)",
@@ -44,8 +53,42 @@ def songs():
         rows = con.execute(
             "SELECT id, title FROM songs ORDER BY id DESC"
         ).fetchall()
-    return jsonify([{"id": r[0], "title": r[1]} for r in rows])
+    return jsonify([
+        {"id": r[0], "title": r[1], "url": f"/stream/{r[0]}"}
+        for r in rows
+    ])
 
-if __name__ == "__main__":
-    init_db()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+@app.route("/stream/<int:song_id>")
+def stream(song_id):
+    if not TOKEN:
+        return "Bot token not configured", 500
+
+    with sqlite3.connect(DB) as con:
+        row = con.execute(
+            "SELECT file_id FROM songs WHERE id = ?",
+            (song_id,)
+        ).fetchone()
+
+    if not row:
+        return "Song not found", 404
+
+    info = requests.get(
+        f"https://api.telegram.org/bot{TOKEN}/getFile",
+        params={"file_id": row[0]}
+    ).json()
+
+    if not info.get("ok"):
+        return "Telegram file error", 502
+
+    path = info["result"]["file_path"]
+    audio = requests.get(
+        f"https://api.telegram.org/file/bot{TOKEN}/{path}",
+        stream=True
+    )
+
+    return Response(
+        audio.iter_content(65536),
+        content_type=audio.headers.get(
+            "Content-Type", "audio/mpeg"
+        )
+    )
