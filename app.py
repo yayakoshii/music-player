@@ -81,14 +81,20 @@ def stream(song_id):
         return "Telegram file error", 502
 
     path = info["result"]["file_path"]
+
     audio = requests.get(
         f"https://api.telegram.org/file/bot{TOKEN}/{path}",
         stream=True
     )
 
+    if audio.status_code != 200:
+        return "Audio download error", 502
+
     return Response(
-        audio.iter_content(65536),
-        content_type=audio.headers.get(
-            "Content-Type", "audio/mpeg"
-        )
+        audio.content,
+        content_type="audio/mpeg",
+        headers={
+            "Content-Disposition": 'inline; filename="music.mp3"',
+            "Accept-Ranges": "none"
+        }
     )
